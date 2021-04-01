@@ -13,7 +13,6 @@ public class MovementScript : MonoBehaviour
     [SerializeField] private float _movementAcceleration;
     [SerializeField] private float _maxMoveSpeed;
     [SerializeField] private float _groundLinearDrag;
-    private float _currentMaxMoveSpeed;
     private float _horizontalDirection;
     private bool _changingDirection => (_rb.velocity.x > 0f && _horizontalDirection < 0f) || (_rb.velocity.x < 0f && _horizontalDirection > 0f);
 
@@ -28,12 +27,29 @@ public class MovementScript : MonoBehaviour
     private int _extraJumpValue;
     private float _hangTimeCounter;
     private float _jumpBufferCounter;
-    private bool _canJump => _jumpBufferCounter > 0 && (_hangTimeCounter > 0f || _extraJumpValue > 0);
+    private bool _canJump => _jumpBufferCounter > 0 && (_hangTimeCounter > 0f || _extraJumpValue > 0 || _onWall);
+    private bool _isJumping = false;
+    private bool _canMove => !_wallGrab;
+
+    private bool _wallGrab => _onWall && ! _onGround && Input.GetButton("WallGrab");
 
     [Header("Ground Collision Variables")]
     [SerializeField] private float _groundRaycastLength;
     [SerializeField] private Vector3 _groundRaycastOffset;
     private bool _onGround;
+
+    [Header("Wall Collision Variables")]
+    [SerializeField] private float _wallRaycastLength;
+    private bool _onWall;
+    private bool _onRightWall;
+
+    [Header("Wall Movement Variables")]
+    [SerializeField] private float _wallSlideModifier = 0.5f;
+    [SerializeField] private float _wallJumpXVelocityHaltDelay = 0.2f;
+    private bool _wallSlide => _onWall && !_onGround && Input.GetAxisRaw("Horizontal") != 0 && !Input.GetButton("WallGrab") && _rb.velocity.y < 0f;
+    private bool _isWallJumping;
+    private float _wallJumpCounter;
+    private float _wallJumpTime = 0.3f;
 
     [Header("Corner Correction Variables")]
     [SerializeField] private float _topRaycastLength;
@@ -41,28 +57,9 @@ public class MovementScript : MonoBehaviour
     [SerializeField] private Vector3 _innerRaycastOffset;
     private bool _canCornerCorrect;
 
-    [Header("Wall Collision Variables")]
-    [SerializeField] private float _wallRaycastLength;
-    [SerializeField] private Vector3 _wallRaycastOffset;
-    private bool _closeToWall;
-    //0 is left, 1 is right
-    private int _direction;
-
-    [Header("Wall Jump Variables")]
-    [SerializeField] private float _wallJumpForce = 1f;
-    private float _distanceFromWall = 1f;
-    private float _turnOffForceTime = 0f;
-    private float _turnOffForceCap = 0.5f;
-    private bool _turnOffForceForWallJump = false;
-    private Vector2 _wallJumpNormalizedVector;
-    private bool _canWallJump => Input.GetButtonDown("Jump") && _closeToWall;
-
-
     void Start()
     {
         _rb = GetComponent<Rigidbody2D>();
-        _wallJumpNormalizedVector = new Vector2(1f, 1f);
-        _currentMaxMoveSpeed = _maxMoveSpeed;
     }
 
     void Update()
@@ -75,18 +72,13 @@ public class MovementScript : MonoBehaviour
         }
         else
             _jumpBufferCounter -= Time.deltaTime;
-
-        _currentMaxMoveSpeed = _maxMoveSpeed;
-
-
     }
 
     private void FixedUpdate()
     {
-        CheckGroundCollisions();
-        CheckWallCollision();
-        MoveCharacter();
-        
+        CheckCollisions();
+        if (_canMove) MoveCharacter();
+        else _rb.velocity = Vector2.Lerp(_rb.velocity, (new Vector2(_horizontalDirection * _maxMoveSpeed, _rb.velocity.y)), 0.5f * Time.fixedDeltaTime);
         if (_onGround)
         {
             _extraJumpValue = _extraJumps;
@@ -99,11 +91,27 @@ public class MovementScript : MonoBehaviour
             ApplyAirinearDrag();
             FallMultiplier();
             _hangTimeCounter -= Time.fixedDeltaTime;
+            if (!_onWall || _rb.velocity.y < 0f) _isJumping = false;
         }
 
-        if (_canJump) Jump();
-
+        if (_canJump)
+        {
+            if (_onWall && !_onGround)
+            {
+                WallJump();
+            }
+            else
+            {
+                Jump(Vector2.up);
+            }
+        }
         if (_canCornerCorrect) CanCornerCorrect(_rb.velocity.y);
+        if (!_isJumping)
+        {
+            if (_wallGrab) WallGrab();
+            if (_wallSlide) WallSlide();
+            if (_onWall) StickToWall();
+        }
     }
 
     private static Vector2 GetInput()
@@ -111,7 +119,7 @@ public class MovementScript : MonoBehaviour
         return new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
     }
 
-    private void CanCornerCorrect(float Yvelocity)
+    private void CanCornerCorrect(float _yVelocity)
     {
         RaycastHit2D _hit = Physics2D.Raycast(transform.position - _innerRaycastOffset + Vector3.up * _topRaycastLength, Vector3.left, _topRaycastLength, _groundLayer);
         if (_hit.collider != null)
@@ -134,22 +142,20 @@ public class MovementScript : MonoBehaviour
     }
 
     private void MoveCharacter()
-    {
-        if (!_turnOffForceForWallJump)
+    {  
+        if (!_isWallJumping)
         {
             _rb.AddForce(new Vector2(_horizontalDirection, 0f) * _movementAcceleration);
 
-            if (Mathf.Abs(_rb.velocity.x) > _currentMaxMoveSpeed)
-                _rb.velocity = new Vector2(Mathf.Sign(_rb.velocity.x) * _currentMaxMoveSpeed, _rb.velocity.y);
+            if (Mathf.Abs(_rb.velocity.x) > _maxMoveSpeed)
+                _rb.velocity = new Vector2(Mathf.Sign(_rb.velocity.x) * _maxMoveSpeed, _rb.velocity.y);
         }
-        else if (_turnOffForceForWallJump)
+        else if (_isWallJumping)
         {
-            if (_turnOffForceTime < _turnOffForceCap)
-                _turnOffForceTime += 1f * Time.deltaTime;
-            else if (_turnOffForceTime >= _turnOffForceCap)
+            _wallJumpCounter += Time.fixedDeltaTime;
+            if (_wallJumpCounter >= _wallJumpTime)
             {
-                _turnOffForceTime = 0;
-                _turnOffForceForWallJump = false;
+                _isWallJumping = false;
             }
         }
     }
@@ -171,38 +177,25 @@ public class MovementScript : MonoBehaviour
             _rb.drag = _airLinearDrag;
     }
 
-    private void Jump()
+    private void Jump(Vector2 direction)
     {
-        if (!_onGround)
-        {
+        if (!_onGround && !_onWall)
             _extraJumpValue--;
-        }
 
         ApplyAirinearDrag();
         _rb.velocity = new Vector2(_rb.velocity.x, 0f);
-        _rb.AddForce(Vector2.up * _jumpForce, ForceMode2D.Impulse);
+        _rb.AddForce(direction * _jumpForce, ForceMode2D.Impulse);
         _hangTimeCounter = 0f;
         _jumpBufferCounter = 0f;
+        _isJumping = true;
     }
 
     private void WallJump()
     {
-        if(_direction == 0)
-        {
-            _wallJumpNormalizedVector =new Vector2(-1, 1).normalized;
-
-            _rb.velocity = new Vector2(0f,0f);
-            _rb.AddForce(_wallJumpNormalizedVector * _wallJumpForce, ForceMode2D.Impulse);
-            _turnOffForceForWallJump = true;
-        }
-        else
-        {
-            _wallJumpNormalizedVector = new Vector2(1, 1).normalized;
-
-            _rb.velocity = new Vector2(0f, 0f);
-            _rb.AddForce(_wallJumpNormalizedVector * _wallJumpForce, ForceMode2D.Impulse);
-            _turnOffForceForWallJump = true;
-        }
+        _isWallJumping = true;
+        _wallJumpCounter = 0;
+        Vector2 jumpDirection = _onRightWall ? Vector2.left : Vector2.right;
+        Jump(Vector2.up + jumpDirection);
     }
 
     private void FallMultiplier()
@@ -221,43 +214,55 @@ public class MovementScript : MonoBehaviour
         }
     }
 
-    private void CheckGroundCollisions()
+    void WallGrab()
     {
+        _rb.gravityScale = 0f;
+        _rb.velocity = new Vector2(_rb.velocity.x, 0f);
+        
+    }
+
+    void WallSlide()
+    {
+        _rb.velocity = new Vector2(_rb.velocity.x, -_maxMoveSpeed * _wallSlideModifier);
+        
+    }
+
+    void StickToWall()
+    {
+        if (_onRightWall && _horizontalDirection >= 0)
+            _rb.velocity = new Vector2(1f, _rb.velocity.y);
+        else if (!_onRightWall && _horizontalDirection <= 0)
+            _rb.velocity = new Vector2(-1f, _rb.velocity.y);
+    }
+
+    private void CheckCollisions()
+    {
+        #region Ground Collisions
         _onGround = Physics2D.Raycast(transform.position + _groundRaycastOffset, Vector2.down, _groundRaycastLength, _groundLayer) ||
                                 Physics2D.Raycast(transform.position - _groundRaycastOffset, Vector2.down, _groundRaycastLength, _groundLayer);
-
+        #endregion
+        #region Corner Collisions
         _canCornerCorrect = Physics2D.Raycast(transform.position + _edgeRaycastOffset, Vector2.up, _topRaycastLength, _groundLayer) &&
             !Physics2D.Raycast(transform.position + _innerRaycastOffset, Vector2.up, _topRaycastLength, _groundLayer) ||
             Physics2D.Raycast(transform.position - _edgeRaycastOffset, Vector2.up, _topRaycastLength, _groundLayer) &&
             !Physics2D.Raycast(transform.position - _innerRaycastOffset, Vector2.up, _topRaycastLength, _groundLayer);
-    }
+        #endregion
 
-    private void CheckWallCollision()
-    {
-        if (Physics2D.Raycast(transform.position + _wallRaycastOffset, Vector2.left, _wallRaycastLength, _wallLayer))
-        {
-            _closeToWall = true;
-            _direction = 0;
-        }
-        else if (Physics2D.Raycast(transform.position - _wallRaycastOffset, Vector2.right, _wallRaycastLength, _wallLayer))
-        {
-            _closeToWall = true;
-            _direction = 1;
-        }
-        else
-            _closeToWall = false;
+        #region Wall Collisions
+        _onWall = Physics2D.Raycast(transform.position, Vector2.right, _wallRaycastLength, _wallLayer) ||
+                    Physics2D.Raycast(transform.position, Vector2.left, _wallRaycastLength, _wallLayer);
+        _onRightWall = Physics2D.Raycast(transform.position, Vector2.right, _wallRaycastLength, _wallLayer);
+        #endregion
     }
 
     private void OnDrawGizmos()
     {
+        //Ground Collisions Gizmos
         Gizmos.color = Color.green;
         Gizmos.DrawLine(transform.position + _groundRaycastOffset, transform.position + _groundRaycastOffset + Vector3.down * _groundRaycastLength);
         Gizmos.DrawLine(transform.position - _groundRaycastOffset, transform.position - _groundRaycastOffset + Vector3.down * _groundRaycastLength);
 
-        Gizmos.color = Color.red;
-        Gizmos.DrawLine(transform.position + _wallRaycastOffset, transform.position + _wallRaycastOffset + Vector3.left * _wallRaycastLength);
-        Gizmos.DrawLine(transform.position - _wallRaycastOffset, transform.position - _wallRaycastOffset + Vector3.right * _wallRaycastLength);
-
+        //Corner Collisions Gizmos
         Gizmos.DrawLine(transform.position + _edgeRaycastOffset, transform.position + _edgeRaycastOffset + Vector3.up * _topRaycastLength);
         Gizmos.DrawLine(transform.position - _edgeRaycastOffset, transform.position - _edgeRaycastOffset + Vector3.up * _topRaycastLength);
         Gizmos.DrawLine(transform.position + _innerRaycastOffset, transform.position + _innerRaycastOffset + Vector3.up * _topRaycastLength);
@@ -267,5 +272,9 @@ public class MovementScript : MonoBehaviour
                         transform.position - _innerRaycastOffset + Vector3.up * _topRaycastLength + Vector3.left * _topRaycastLength);
         Gizmos.DrawLine(transform.position + _innerRaycastOffset + Vector3.up * _topRaycastLength,
                         transform.position + _innerRaycastOffset + Vector3.up * _topRaycastLength + Vector3.right * _topRaycastLength);
+
+        //Wall Collisions Gizmos
+        Gizmos.DrawLine(transform.position, transform.position + Vector3.right * _wallRaycastLength);
+        Gizmos.DrawLine(transform.position, transform.position + Vector3.left * _wallRaycastLength);
     }
 }
