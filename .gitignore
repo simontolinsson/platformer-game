@@ -11,7 +11,7 @@ BuildD/
 Assets/AssetStoreTools*
 Assets/Temp/
 Assets/Temp.meta
-Platformer/UserSettings/EditorUserSettings.asset
+# Platformer/UserSettings/EditorUserSettings.asset
 
 # ===================================== #
 # Visual Studio / MonoDevelop generated #
