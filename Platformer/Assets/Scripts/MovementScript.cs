@@ -4,6 +4,20 @@ public class MovementScript : MonoBehaviour
 {
     [Header("Components")]
     private Rigidbody2D _rb;
+    private CapsuleCollider2D _capsuleCollider;
+
+    [Header("Slope Variables")]
+    [SerializeField] private PhysicsMaterial2D _noFriction;
+    [SerializeField] private PhysicsMaterial2D _fullFriction;
+    [SerializeField] private float _slopeCheckDistance;
+    [SerializeField] private float _maxSlopeAngle;
+    private Vector2 _slopeNormalPerp;
+    private bool _isOnSlope;
+    private bool _canWalkOnSlope;
+    private float _slopeDownAngle;
+    private float _slopeDownAngleOld;
+    private float _slopeSideAngle;
+
 
     [Header("Layer Masks")]
     [SerializeField] private LayerMask _groundLayer;
@@ -27,7 +41,7 @@ public class MovementScript : MonoBehaviour
     private int _extraJumpValue;
     private float _hangTimeCounter;
     private float _jumpBufferCounter;
-    private bool _canJump => _jumpBufferCounter > 0 && (_hangTimeCounter > 0f || _extraJumpValue > 0 || _onWall);
+    private bool _canJump => _jumpBufferCounter > 0 && (_hangTimeCounter > 0f  || _extraJumpValue > 0 || _onWall);
     private bool _isJumping = false;
     private bool _canMove => !_wallGrab;
 
@@ -60,6 +74,7 @@ public class MovementScript : MonoBehaviour
     void Start()
     {
         _rb = GetComponent<Rigidbody2D>();
+        _capsuleCollider = GetComponent<CapsuleCollider2D>();
     }
 
     void Update()
@@ -77,6 +92,8 @@ public class MovementScript : MonoBehaviour
     private void FixedUpdate()
     {
         CheckCollisions();
+        SlopeCheck();
+
         if (_canMove) MoveCharacter();
         else _rb.velocity = Vector2.Lerp(_rb.velocity, (new Vector2(_horizontalDirection * _maxMoveSpeed, _rb.velocity.y)), 0.5f * Time.fixedDeltaTime);
         if (_onGround)
@@ -143,7 +160,21 @@ public class MovementScript : MonoBehaviour
 
     private void MoveCharacter()
     {  
-        if (!_isWallJumping)
+        if (!_isWallJumping && !_isOnSlope && _onGround && !_isJumping)
+        {
+            _rb.AddForce(new Vector2(_horizontalDirection, 0f) * _movementAcceleration);
+
+            if (Mathf.Abs(_rb.velocity.x) > _maxMoveSpeed)
+                _rb.velocity = new Vector2(Mathf.Sign(_rb.velocity.x) * _maxMoveSpeed, _rb.velocity.y);
+        }
+        else if(!_isWallJumping && _isOnSlope && _onGround && !_isJumping && _canWalkOnSlope)
+        {
+            _rb.AddForce(_slopeNormalPerp * -_horizontalDirection * _movementAcceleration);
+
+            if (Mathf.Abs(_rb.velocity.x) > _maxMoveSpeed)
+                _rb.velocity = new Vector2(Mathf.Sign(_rb.velocity.x) * _maxMoveSpeed, _rb.velocity.y);
+        }
+        else if (!_isWallJumping && !_onGround)
         {
             _rb.AddForce(new Vector2(_horizontalDirection, 0f) * _movementAcceleration);
 
@@ -153,6 +184,7 @@ public class MovementScript : MonoBehaviour
         else if (_isWallJumping)
         {
             _wallJumpCounter += Time.fixedDeltaTime;
+
             if (_wallJumpCounter >= _wallJumpTime)
             {
                 _isWallJumping = false;
@@ -253,6 +285,73 @@ public class MovementScript : MonoBehaviour
                     Physics2D.Raycast(transform.position, Vector2.left, _wallRaycastLength, _wallLayer);
         _onRightWall = Physics2D.Raycast(transform.position, Vector2.right, _wallRaycastLength, _wallLayer);
         #endregion
+    }
+
+    private void SlopeCheck()
+    {
+        Vector2 _checkPos = transform.position - new Vector3(0.0f, transform.localScale.y / 2);
+        SlopeCheckHorizontal(_checkPos);
+        SlopeCheckVertical(_checkPos);
+    }
+
+    private void SlopeCheckHorizontal(Vector2 _checkPos)
+    {
+        RaycastHit2D _slopeHitFront = Physics2D.Raycast(_checkPos, transform.right, _slopeCheckDistance, _groundLayer);
+        RaycastHit2D _slopeHitBack = Physics2D.Raycast(_checkPos, -transform.right, _slopeCheckDistance, _groundLayer);
+
+        if (_slopeHitFront)
+        {
+            _isOnSlope = true;
+            _slopeSideAngle = Vector2.Angle(_slopeHitFront.normal, Vector2.up);
+        }
+        else if (_slopeHitBack)
+        {
+            _isOnSlope = true;
+            _slopeSideAngle = Vector2.Angle(_slopeHitBack.normal, Vector2.up);
+        }
+        else
+        {
+            _slopeSideAngle = 0.0f;
+            _isOnSlope = false;
+        }
+    }
+
+    private void SlopeCheckVertical(Vector2 _checkPos)
+    {
+        RaycastHit2D hit = Physics2D.Raycast(_checkPos, Vector2.down, _slopeCheckDistance, _groundLayer);
+
+        if (hit)
+        {
+            _slopeNormalPerp = Vector2.Perpendicular(hit.normal).normalized;
+            _slopeDownAngle = Vector2.Angle(hit.normal, Vector2.up);
+
+            if(_slopeDownAngle != _slopeDownAngleOld)
+            {
+                _isOnSlope = true;
+            }
+
+            _slopeDownAngleOld = _slopeDownAngle;
+            Debug.DrawRay(hit.point, _slopeNormalPerp, Color.red);
+            Debug.DrawRay(hit.point, hit.normal, Color.red);
+        }
+
+        if(_slopeDownAngle > _maxSlopeAngle || _slopeSideAngle > _maxSlopeAngle)
+        {
+            _canWalkOnSlope = false;
+        }
+        else
+        {
+            _canWalkOnSlope = true;
+        }
+
+        if (_isOnSlope && _horizontalDirection == 0f && _canWalkOnSlope)
+        {
+            _rb.sharedMaterial = _fullFriction;
+        }
+        else
+        {
+            _rb.sharedMaterial = _noFriction;
+        }
     }
 
     private void OnDrawGizmos()
