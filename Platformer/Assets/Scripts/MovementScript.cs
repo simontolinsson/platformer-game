@@ -2,9 +2,12 @@ using UnityEngine;
 
 public class MovementScript : MonoBehaviour
 {
+    public ParticleSystem dust;
+
     [Header("Components")]
     private Rigidbody2D _rb;
     private CapsuleCollider2D _capsuleCollider;
+    private SpriteRenderer _spriteRenderer;
 
     [Header("Slope Variables")]
     [SerializeField] private PhysicsMaterial2D _noFriction;
@@ -29,6 +32,7 @@ public class MovementScript : MonoBehaviour
     [SerializeField] private float _groundLinearDrag;
     private float _horizontalDirection;
     private bool _changingDirection => (_rb.velocity.x > 0f && _horizontalDirection < 0f) || (_rb.velocity.x < 0f && _horizontalDirection > 0f);
+    private bool _facingRight = true; 
 
     [Header("Jump Variables")]
     [SerializeField] private float _jumpForce = 12f;
@@ -59,7 +63,7 @@ public class MovementScript : MonoBehaviour
 
     [Header("Wall Movement Variables")]
     [SerializeField] private float _wallSlideModifier = 0.5f;
-    [SerializeField] private float _wallJumpXVelocityHaltDelay = 0.2f;
+    //[SerializeField] private float _wallJumpXVelocityHaltDelay = 0.2f;
     private bool _wallSlide => _onWall && !_onGround && Input.GetAxisRaw("Horizontal") != 0 && !Input.GetButton("WallGrab") && _rb.velocity.y < 0f;
     private bool _isWallJumping;
     private float _wallJumpCounter;
@@ -75,6 +79,7 @@ public class MovementScript : MonoBehaviour
     {
         _rb = GetComponent<Rigidbody2D>();
         _capsuleCollider = GetComponent<CapsuleCollider2D>();
+        _spriteRenderer = GetComponent<SpriteRenderer>();
     }
 
     void Update()
@@ -87,6 +92,15 @@ public class MovementScript : MonoBehaviour
         }
         else
             _jumpBufferCounter -= Time.deltaTime;
+
+        if (_horizontalDirection < 0f && _facingRight)
+        {
+            Flip();
+        }
+        else if(_horizontalDirection > 0f && !_facingRight)
+        {
+            Flip();
+        }
     }
 
     private void FixedUpdate()
@@ -116,10 +130,12 @@ public class MovementScript : MonoBehaviour
             if (_onWall && !_onGround)
             {
                 WallJump();
+                CreateDust();
             }
             else
             {
                 Jump(Vector2.up);
+                CreateDust();
             }
         }
         if (_canCornerCorrect) CanCornerCorrect(_rb.velocity.y);
@@ -192,6 +208,13 @@ public class MovementScript : MonoBehaviour
         }
     }
 
+    void Flip()
+    {
+        CreateDust();
+        _facingRight = !_facingRight;
+        _spriteRenderer.flipX = true;
+    }
+
     private void ApplyGroundLinearDrag()
     {
         if (Mathf.Abs(_horizontalDirection) < 0.4f || _changingDirection)
@@ -256,7 +279,7 @@ public class MovementScript : MonoBehaviour
     void WallSlide()
     {
         _rb.velocity = new Vector2(_rb.velocity.x, -_maxMoveSpeed * _wallSlideModifier);
-        
+        CreateDust();
     }
 
     void StickToWall()
@@ -375,5 +398,10 @@ public class MovementScript : MonoBehaviour
         //Wall Collisions Gizmos
         Gizmos.DrawLine(transform.position, transform.position + Vector3.right * _wallRaycastLength);
         Gizmos.DrawLine(transform.position, transform.position + Vector3.left * _wallRaycastLength);
+    }
+
+    void CreateDust()
+    {
+        dust.Play();
     }
 }
