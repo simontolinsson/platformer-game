@@ -11,10 +11,11 @@ GameObject:
   - component: {fileID: 2546024510676581657}
   - component: {fileID: 2546024510676581658}
   - component: {fileID: 2546024510676581659}
+  - component: {fileID: 5922360632140607125}
   - component: {fileID: 2546024510676581661}
   - component: {fileID: 2622909258879618771}
   m_Layer: 0
-  m_Name: Player 1
+  m_Name: Player
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -107,6 +108,19 @@ Rigidbody2D:
   m_SleepingMode: 1
   m_CollisionDetection: 1
   m_Constraints: 4
+--- !u!114 &5922360632140607125
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2546024510676581656}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 4f075fc76e6ba02419d46a548316452c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  _dust: {fileID: 3649158067152239425, guid: d1407613f4892f9439ce36620e25e34a, type: 3}
 --- !u!114 &2546024510676581661
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -119,6 +133,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3d33ee432022b9e4ebfb902451440e89, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  _playDust: 0
   _noFriction: {fileID: 6200000, guid: 4356437eedc98df4e9a0a6583763e428, type: 2}
   _fullFriction: {fileID: 6200000, guid: f1f6e7007d19aaa43bb15899fc046248, type: 2}
   _slopeCheckDistance: 0.5
@@ -143,7 +158,6 @@ MonoBehaviour:
   _groundRaycastOffset: {x: 0.19, y: 0, z: 0}
   _wallRaycastLength: 0.25
   _wallSlideModifier: 0.5
-  _wallJumpXVelocityHaltDelay: 0.2
   _topRaycastLength: 0.51
   _edgeRaycastOffset: {x: 0.21, y: 0, z: 0}
   _innerRaycastOffset: {x: 0.12, y: 0, z: 0}

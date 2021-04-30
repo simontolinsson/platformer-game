@@ -2,12 +2,14 @@ using UnityEngine;
 
 public class MovementScript : MonoBehaviour
 {
-    public ParticleSystem dust;
 
     [Header("Components")]
     private Rigidbody2D _rb;
     private CapsuleCollider2D _capsuleCollider;
     private SpriteRenderer _spriteRenderer;
+
+    [Header("Particle Variables")]
+    public bool _playDust;
 
     [Header("Slope Variables")]
     [SerializeField] private PhysicsMaterial2D _noFriction;
@@ -20,7 +22,6 @@ public class MovementScript : MonoBehaviour
     private float _slopeDownAngle;
     private float _slopeDownAngleOld;
     private float _slopeSideAngle;
-
 
     [Header("Layer Masks")]
     [SerializeField] private LayerMask _groundLayer;
@@ -47,7 +48,7 @@ public class MovementScript : MonoBehaviour
     private float _jumpBufferCounter;
     private bool _canJump => _jumpBufferCounter > 0 && (_hangTimeCounter > 0f  || _extraJumpValue > 0 || _onWall);
     private bool _isJumping = false;
-    private bool _canMove => !_wallGrab;
+    private bool _canMove => !_wallGrab || !_canWalkOnSlope;
 
     private bool _wallGrab => _onWall && ! _onGround && Input.GetButton("WallGrab");
 
@@ -100,7 +101,7 @@ public class MovementScript : MonoBehaviour
         else if(_horizontalDirection > 0f && !_facingRight)
         {
             Flip();
-        }
+        }     
     }
 
     private void FixedUpdate()
@@ -108,9 +109,10 @@ public class MovementScript : MonoBehaviour
         CheckCollisions();
         SlopeCheck();
 
-        if (_canMove) MoveCharacter();
-        else _rb.velocity = Vector2.Lerp(_rb.velocity, (new Vector2(_horizontalDirection * _maxMoveSpeed, _rb.velocity.y)), 0.5f * Time.fixedDeltaTime);
-        if (_onGround)
+        if (_canMove && _canWalkOnSlope) MoveCharacter();
+        else if(_canWalkOnSlope) _rb.velocity = Vector2.Lerp(_rb.velocity, (new Vector2(_horizontalDirection * _maxMoveSpeed, _rb.velocity.y)), 0.5f * Time.fixedDeltaTime);
+
+        if (_onGround && _canWalkOnSlope)
         {
             _extraJumpValue = _extraJumps;
             ApplyGroundLinearDrag();
@@ -125,20 +127,22 @@ public class MovementScript : MonoBehaviour
             if (!_onWall || _rb.velocity.y < 0f) _isJumping = false;
         }
 
-        if (_canJump)
+        if (_canJump && _canWalkOnSlope)
         {
             if (_onWall && !_onGround)
             {
                 WallJump();
-                CreateDust();
+                _playDust = true;
             }
             else
             {
                 Jump(Vector2.up);
-                CreateDust();
+                _playDust = true;
             }
         }
+
         if (_canCornerCorrect) CanCornerCorrect(_rb.velocity.y);
+
         if (!_isJumping)
         {
             if (_wallGrab) WallGrab();
@@ -183,7 +187,7 @@ public class MovementScript : MonoBehaviour
             if (Mathf.Abs(_rb.velocity.x) > _maxMoveSpeed)
                 _rb.velocity = new Vector2(Mathf.Sign(_rb.velocity.x) * _maxMoveSpeed, _rb.velocity.y);
         }
-        else if(!_isWallJumping && _isOnSlope && _onGround && !_isJumping && _canWalkOnSlope)
+        else if(!_isWallJumping && _isOnSlope && _onGround && !_isJumping)
         {
             _rb.AddForce(_slopeNormalPerp * -_horizontalDirection * _movementAcceleration);
 
@@ -210,7 +214,7 @@ public class MovementScript : MonoBehaviour
 
     void Flip()
     {
-        CreateDust();
+        _playDust = true;
         _facingRight = !_facingRight;
         _spriteRenderer.flipX = true;
     }
@@ -279,7 +283,7 @@ public class MovementScript : MonoBehaviour
     void WallSlide()
     {
         _rb.velocity = new Vector2(_rb.velocity.x, -_maxMoveSpeed * _wallSlideModifier);
-        CreateDust();
+        _playDust = true;
     }
 
     void StickToWall()
@@ -398,10 +402,5 @@ public class MovementScript : MonoBehaviour
         //Wall Collisions Gizmos
         Gizmos.DrawLine(transform.position, transform.position + Vector3.right * _wallRaycastLength);
         Gizmos.DrawLine(transform.position, transform.position + Vector3.left * _wallRaycastLength);
-    }
-
-    void CreateDust()
-    {
-        dust.Play();
     }
 }
